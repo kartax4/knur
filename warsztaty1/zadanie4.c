@@ -6,10 +6,11 @@ int main(int argc, char** argv)
 {
     char str1[100];
     char str2[100];
+    char razem[200];
     printf("Podaj string\n");
-    fgets(str1, 10, stdin);
-    fgets(str2, 100, stdin);
-
+    scanf("%s",str1);
+    scanf("%s",str2);
+    str
     printf("%s", str1);
     printf("%s", str2);
     return 0;
