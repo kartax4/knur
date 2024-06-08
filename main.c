@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <errno.h>
 
 const char *STATIC_RESPONSE =
 		"HTTP/1.1 200 OK\r\n"
@@ -112,46 +113,48 @@ int main(void) {
 		// Akceptujemy połączenie przychodzące.
 		int clientSocket = accept(serverSocket, (struct sockaddr *) &ipadr, &size);
 
+		if (clientSocket < 0) {
+			if (errno == EAGAIN || errno == EWOULDBLOCK) {
+				// accept call returned because the socket is non-blocking and no incoming connection is available
+				//printf("No incoming connection available, trying again.\n");
+			} else {
+				perror("accept");
+				return 1;
+			}
+		} else {
+			printf("Accepted connection from %s:%d\n", inet_ntop(AF_INET, &clientData.sin_addr.s_addr, ipBuffer, 16),
+				   ntohs(clientData.sin_port));
+			// Odbieramy request od przeglądarki.
+			size_t received = recv(clientSocket, inputBuffer, INPUT_BUFFER_SIZE, 0);
+			inputBuffer[received] = 0x00;
 
-		// Obsługujemy błąd przy akceptacji.
-		if (clientSocket == -1) {
-			printf("Accept error");
-			continue;
-		}
+			findPath(inputBuffer, pathBuffer);
+			printf("Requested path:\n%s\n", pathBuffer);
 
-		printf("Accepted connection from %s:%d\n", inet_ntop(AF_INET, &clientData.sin_addr.s_addr, ipBuffer, 16),
-			   ntohs(clientData.sin_port));
+			//Wypisujemy request od przeglądarki.
+			//printf("Received data from client:\n%serverSocket\n", inputBuffer);
 
-		// Odbieramy request od przeglądarki.
-		size_t received = recv(clientSocket, inputBuffer, INPUT_BUFFER_SIZE, 0);
-		inputBuffer[received] = 0x00;
+			const char *response = Router(pathBuffer);
 
-		findPath(inputBuffer, pathBuffer);
-		printf("Requested path:\n%s\n", pathBuffer);
+			if (response == NULL) {
+				// Zamykamy transmisje na sockecie clienta.
+				shutdown(clientSocket, SHUT_RDWR);
+				// Zamykamy socket clienta.
+				close(clientSocket);
+				break;
+			}
 
-		//Wypisujemy request od przeglądarki.
-		//printf("Received data from client:\n%serverSocket\n", inputBuffer);
+			// Wysyłamy stringa do przeglądarki.
+			size_t sent = send(clientSocket, response, strlen(response), 0);
+			printf("Sent %zu bytes to client and closed connection.", sent);
 
-		const char *response = Router(pathBuffer);
-
-		if (response == NULL) {
 			// Zamykamy transmisje na sockecie clienta.
 			shutdown(clientSocket, SHUT_RDWR);
 			// Zamykamy socket clienta.
 			close(clientSocket);
-			break;
+
+			printf("Sent %zu bytes to client and closed connection.\n", sent);
 		}
-
-		// Wysyłamy stringa do przeglądarki.
-		size_t sent = send(clientSocket, response, strlen(response), 0);
-		printf("Sent %zu bytes to client and closed connection.", sent);
-
-		// Zamykamy transmisje na sockecie clienta.
-		shutdown(clientSocket, SHUT_RDWR);
-		// Zamykamy socket clienta.
-		close(clientSocket);
-
-		printf("Sent %zu bytes to client and closed connection.\n", sent);
 	}
 	close(serverSocket);
 	return 0;
